@@ -14,30 +14,13 @@ AUTHFILE=~/.rsaa.conf
 # Function that checks for available parsers
 select_parser ()
 {
-# first verify if python is present
-if hash python 2>/dev/null
-then
-    # then check if it can import the json.tool module, if yes then set python as parser, if not specify that there is none
-    check_python_module=$(python -c 'import json.tool' 2>&1)
-    if [ -z "$check_python_module" ]
-        then
-            parser="python"
-        else
-            parser="none"
-    fi
+check_python_module=$(python -c 'import json.tool' 2>&1)
+if [ -z "$check_python_module" ]; then
+   parser="python"
+elif [ -f /usr/bin/jq ]; then
+   parser="jq"
 else
-    parser="none"
-fi
-
-# if there is no python check for jq
-if [[ $parser == "none" ]] && (hash jq 2>/dev/null)
-then
-    parser="jq"
-fi
-
-if [[ $parser == "none" ]]
-then
-    echo -e "ERROR! No parser available!\nThis script requires either python module json.tool or jq\nFor jq visit http://stedolan.github.io/jq/"
+   echo -e "ERROR! No parser available!\nThis script requires either python module json.tool or jq\nFor jq visit http://stedolan.github.io/jq/"
     print_help
     exit 1
 fi
