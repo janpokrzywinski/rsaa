@@ -1,26 +1,43 @@
 #!/bin/bash
 #
 #    Bash script for Rackspace Cloud API authentication.
-#    Version 1.3.4
+#    Version 1.3.5
 #    Jan Pokrzywinski
 #
 
 # Authentication endpoint
-AUTHURL=https://identity.api.rackspacecloud.com/v2.0/
+Auth_Url=https://identity.api.rackspacecloud.com/v2.0/
 
 # Set file where the auth details are stored
-AUTHFILE=~/.rsaa.conf
+Auth_File=~/.rsaa.conf
 
 # Function that checks for available parsers
 select_parser ()
 {
-check_python_module=$(python -c 'import json.tool' 2>&1)
-if [ -z "$check_python_module" ]; then
-   parser="python"
-elif [ -f /usr/bin/jq ]; then
-   parser="jq"
+# first verify if python is present
+if hash python 2>/dev/null
+then
+    # then check if it can import the json.tool module, if yes then set python as parser, if not specify that there is none
+    Check_Python_Module=$(python -c 'import json' 2>&1)
+    if [ -z "${Check_Python_Module}" ]
+        then
+            Parser="python"
+        else
+            Parser="none"
+    fi
 else
-   echo -e "ERROR! No parser available!\nThis script requires either python module json.tool or jq\nFor jq visit http://stedolan.github.io/jq/"
+    Parser="none"
+fi
+
+# if there is no python check for jq
+if [[ ${Parser} == "none" ]] && (hash jq 2>/dev/null)
+then
+    Parser="jq"
+fi
+
+if [[ ${Parser} == "none" ]]
+then
+    echo -e "ERROR! No parser available!\nThis script requires either python module json.tool or jq\nFor jq visit http://stedolan.github.io/jq/"
     print_help
     exit 1
 fi
@@ -30,11 +47,11 @@ fi
 # Main authentication function. Stores plain JSON response in the AUTH variable
 authenticate () 
 {
-    AUTH=$(curl -sX POST $AUTHURL/tokens -d '{"auth":{ "RAX-KSKEY:apiKeyCredentials":{ "username":"'$USERNAME'", "apiKey":"'$APIKEY'" } } }' -H "Content-type: application/json")
-    ERROR_MSG='Username or api key is invalid.'
+    Rax_Auth=$(curl -sX POST ${Auth_Url}/tokens -d '{"auth":{ "RAX-KSKEY:apiKeyCredentials":{ "username":"'${Username}'", "apiKey":"'${Api_Key}'" } } }' -H "Content-type: application/json")
+    Error_Msg='Username or api key is invalid.'
     # verify if the response does not indicate incorrect authentication details.
-    ERROR_CHECK=$(echo $AUTH | grep "$ERROR_MSG")
-    if [ -n "$ERROR_CHECK" ]
+    Error_Check=$(echo ${Rax_Auth} | grep "${Error_Msg}")
+    if [ -n "${Error_Check}" ]
     then
         echo "ERROR: Incorrect authentication details, wrong username or password."
         exit 1
@@ -46,19 +63,19 @@ authenticate ()
 
 print_help ()
 {
-    echo -e """Usage: $0 [OPTIONS] -u Login-Name -p API-Key
-  or : $0 [OPTIONS] -f
+    echo -e """Usage: ${0} [OPTIONS] -u Login-Name -p API-Key
+  or : ${0} [OPTIONS] -i
 
   -u, --user\t\t\tUsername
   -p, -k, --key\t\t\tAPI Key
   -t, --token\t\t\tRespond just with API Token
-  -i, --me\t\t\tLoad credentials from $AUTHFILE file
+  -i, --me\t\t\tLoad credentials from ${Auth_File} file
   -v, --verbose, --full, -f\tDisplay plain JSON response
 
-To use the credentials from the file create it as a plain text in $AUTHFILE
+To use the credentials from the file create it as a plain text in ${Auth_File}
 It should only contain two lines of text in format:
 Username
-APIKey
+API-Key
             """
 }
 
@@ -66,21 +83,28 @@ APIKey
 # Function to print bare output without any data manipulation
 print_full ()
 {
-    echo $AUTH
+    echo ${Rax_Auth}
+}
+
+
+# Acquire token
+acquire_token ()
+{
+    if [[ ${Parser} == 'python' ]]
+    then
+        Auth_Token=$(echo ${Rax_Auth} | python -c 'import json, sys; data = json.loads(sys.stdin.read()); print data["access"]["token"]["id"]')
+    elif [[ ${Parser} == 'jq' ]]
+    then
+        Auth_Token=$(echo ${Rax_Auth} | jq '.access.token.id' | tr -d '"')
+    fi
 }
 
 
 # Function to print just the API Token
 print_token ()
 {
-    if [[ $parser == 'python' ]]
-    then
-        AUTH_TOKEN=$(echo $AUTH | python -mjson.tool | grep -A5 token | grep id | cut -d '"' -f4)
-    elif [[ $parser == 'jq' ]]
-    then
-        AUTH_TOKEN=$(echo $AUTH | jq '.access.token.id' | tr -d '"')
-    fi
-    echo $AUTH_TOKEN
+    acquire_token
+    echo ${Auth_Token}
 }
 
 
@@ -88,37 +112,36 @@ print_token ()
 print_nice ()
 {
 # first obtain some specific information by parsing the AUTH variable
-    if [[ $parser == 'python' ]]
+    acquire_token
+    if [[ ${Parser} == 'python' ]]
     then
-        AUTH_TOKEN=$(echo $AUTH | python -mjson.tool | grep -A5 token | grep id | cut -d '"' -f4)
-        TOKEN_EXPIRES=$(echo $AUTH | python -mjson.tool | grep expires | cut -d '"' -f4 | sed 's/T/ /g' | cut -c1-19)
-        DEFAULT_REG=$(echo $AUTH | python -mjson.tool | grep defaultRegion | cut -d '"' -f4)
-        ACCOUNT_NUMBER=$(echo $AUTH | python -mjson.tool | grep -A1 'tenant"' | grep id | cut -d '"' -f4)
-    elif [[ $parser == 'jq' ]]
+        Token_Expires=$(echo ${Rax_Auth} | python -mjson.tool | grep expires | cut -d '"' -f4 | sed 's/T/ /g' | cut -c1-19)
+        Default_Reg=$(echo ${Rax_Auth} | python -mjson.tool | grep defaultRegion | cut -d '"' -f4)
+        Account_Number=$(echo ${Rax_Auth} | python -mjson.tool | grep -A1 'tenant"' | grep id | cut -d '"' -f4)
+    elif [[ ${Parser} == 'jq' ]]
     then
-        AUTH_TOKEN=$(echo $AUTH | jq '.access.token.id' | tr -d '"')
-        TOKEN_EXPIRES=$(echo $AUTH | jq . | grep expires | cut -d '"' -f4 | sed 's/T/ /g' | cut -c1-19)
-        DEFAULT_REG=$(echo $AUTH | jq '.access.user' | grep defaultRegion | cut -d '"' -f4)
-        ACCOUNT_NUMBER=$(echo $AUTH | jq '.access.token.tenant' | grep id | cut -d '"' -f4)
+        Token_Expires=$(echo ${Rax_Auth} | jq . | grep expires | cut -d '"' -f4 | sed 's/T/ /g' | cut -c1-19)
+        Default_Reg=$(echo ${Rax_Auth} | jq '.access.user' | grep defaultRegion | cut -d '"' -f4)
+        Account_Number=$(echo ${Rax_Auth} | jq '.access.token.tenant' | grep id | cut -d '"' -f4)
     fi
 # get to pretty printing
     printf "\n\e[1;36m----------- Info ------------\e[0m\n"
-    printf "Parser used: $parser\nDDI: $ACCOUNT_NUMBER\nDefault Region: $DEFAULT_REG\nAuth URL:\n$AUTHURL\n"
+    printf "Parser used: ${Parser}\nDDI: ${Account_Number}\nDefault Region: ${Default_Reg}\nAuth URL:\n${Auth_Url}\n"
     printf "\n\e[1;36m--------- Endpoints ---------\e[0m\n"
-    if [[ $parser == 'python' ]]
+    if [[ ${Parser} == 'python' ]]
     then
-        echo $AUTH | python -mjson.tool | grep "URL"| cut -d '"' -f4
-    elif [[ $parser == 'jq' ]]    
+        echo ${Rax_Auth} | python -mjson.tool | grep "URL"| cut -d '"' -f4
+    elif [[ ${Parser} == 'jq' ]]    
     then
-        echo $AUTH | jq '.access.serviceCatalog' | grep "URL"| cut -d '"' -f4
+        echo ${Rax_Auth} | jq '.access.serviceCatalog' | grep "URL"| cut -d '"' -f4
     fi    
-    printf "\n\e[1;36m--------- API Token ---------\e[0m\nAUTH_TOKEN=$AUTH_TOKEN\nToken expires: $TOKEN_EXPIRES\n\n"
+    printf "\n\e[1;36m--------- API Token ---------\e[0m\nAUTH_TOKEN=${Auth_Token}\nToken expires: ${Token_Expires}\n\n"
     printf "\e[1;36m--- Example curl requests ---\e[0m\n"
-    echo "See https://docs.rackspace.com for full specification, add endpoint URL at the end of each request"
+    printf "See https://docs.rackspace.com for full specification, add endpoint URL at the end of each request"
     echo "- Generic silent request:"
-    echo 'curl -s -H "X-Auth-Token: $AUTH_TOKEN" -H "Content-type: application/json" -X GET '
+    echo 'curl -s -H "X-Auth-Token: ${AUTH_TOKEN}" -H "Content-type: application/json" -X GET '
     echo "- Monitoring entities request:"
-    printf 'curl -s -H "X-Auth-Token: $AUTH_TOKEN" -H "Content-type: application/json" -X GET https://monitoring.api.rackspacecloud.com/v1.0/'$ACCOUNT_NUMBER'/entities \n\n'
+    echo -e 'curl -s -H "X-Auth-Token: ${AUTH_TOKEN}" -H "Content-type: application/json" -X GET https://monitoring.api.rackspacecloud.com/v1.0/'${Account_Number}'/entities \n\n'
 }
 
 
@@ -126,14 +149,14 @@ print_nice ()
 auth_from_file ()
 {
     # Check if the file exists, if not print error message and halt
-    if [ ! -f $AUTHFILE ]; then
-        echo "ERROR: Authentication file not found!"
+    if [ ! -f ${Auth_File} ]; then
+        printf "ERROR: Authentication file not found!"
         print_help
         exit 1
     fi
     # If file present then read credentials
-    USERNAME=$(head -n1 $AUTHFILE)
-    APIKEY=$(tail -n1 $AUTHFILE)
+    Username=$(head -n1 ${Auth_File})
+    Api_Key=$(tail -n1 ${Auth_File})
                    
 }
 
@@ -144,11 +167,11 @@ auth_from_file ()
 
 
 # Sanity check variables
-Full_Auth_var=false
-Token_Auth_var=false
-File_Auth_var=false
-User_set_var=false
-Pass_set_var=false
+Full_Auth_Var=false
+Token_Auth_Var=false
+File_Auth_Var=false
+User_Set_Var=false
+Pass_Set_Var=false
 
 
 # check if there are arguments provided, if not print help
@@ -159,34 +182,34 @@ fi
 
 # check artuments and set specific variables if needed
 while (( "$#" )); do
-case "$1" in
+case "${1}" in
     "--me"|"-i")
         auth_from_file
-        File_Auth_var=true
+        File_Auth_Var=true
         ;;
     "-u"|"--user")
         shift
-        USERNAME=$1
-        User_set_var=true
+        Username=${1}
+        User_Set_Var=true
         ;;
     "-t"|"--token")
         shift
-        Token_Auth_var=true
+        Token_Auth_Var=true
         ;;
     "-p"|"-k"|"--key")
         shift
-        APIKEY=$1
-        Pass_set_var=true
+        Api_Key=${1}
+        Pass_Set_Var=true
         ;;
     "-v"|"--verbose"|"--full"|"-f")
-        Full_Auth_var=true
+        Full_Auth_Var=true
         ;;
     "--help"|"-h"|"-?")
         print_help
         exit 0
         ;;
     *|-*)
-        printf "ERROR: Incorrect argument: $1 \n"
+        printf "ERROR: Incorrect argument: ${1} \n"
         print_help
         exit 1
         ;;
@@ -202,11 +225,11 @@ done
 
 # first check if parsers available and select parser
 # Check authentication provided
-if [ $File_Auth_var == true ]
+if [ ${File_Auth_Var} == true ]
 then
     authenticate
 else
-    if [ $User_set_var == true ] && [ $Pass_set_var == true ]
+    if [ ${User_Set_Var} == true ] && [ ${Pass_Set_Var} == true ]
     then
         authenticate
     else
@@ -217,7 +240,7 @@ else
 fi
 
 # First check if just token was requested
-if [ $Token_Auth_var == true ]
+if [ ${Token_Auth_Var} == true ]
 then
     select_parser
     print_token
@@ -225,7 +248,7 @@ then
 fi
 
 # Check if user wants plain output, if not print nice
-if [ $Full_Auth_var == true ] 
+if [ ${Full_Auth_Var} == true ] 
 then
     print_full
 else
