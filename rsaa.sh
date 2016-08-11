@@ -75,12 +75,12 @@ print_token ()
 {
     if [[ $parser == 'python' ]]
     then
-        TOKEN=$(echo $AUTH | python -mjson.tool | grep -A5 token | grep id | cut -d '"' -f4)
+        AUTH_TOKEN=$(echo $AUTH | python -mjson.tool | grep -A5 token | grep id | cut -d '"' -f4)
     elif [[ $parser == 'jq' ]]
     then
-        TOKEN=$(echo $AUTH | jq '.access.token.id' | tr -d '"')
+        AUTH_TOKEN=$(echo $AUTH | jq '.access.token.id' | tr -d '"')
     fi
-    echo $TOKEN
+    echo $AUTH_TOKEN
 }
 
 
@@ -90,13 +90,13 @@ print_nice ()
 # first obtain some specific information by parsing the AUTH variable
     if [[ $parser == 'python' ]]
     then
-        TOKEN=$(echo $AUTH | python -mjson.tool | grep -A5 token | grep id | cut -d '"' -f4)
+        AUTH_TOKEN=$(echo $AUTH | python -mjson.tool | grep -A5 token | grep id | cut -d '"' -f4)
         TOKEN_EXPIRES=$(echo $AUTH | python -mjson.tool | grep expires | cut -d '"' -f4 | sed 's/T/ /g' | cut -c1-19)
         DEFAULT_REG=$(echo $AUTH | python -mjson.tool | grep defaultRegion | cut -d '"' -f4)
         ACCOUNT_NUMBER=$(echo $AUTH | python -mjson.tool | grep -A1 'tenant"' | grep id | cut -d '"' -f4)
     elif [[ $parser == 'jq' ]]
     then
-        TOKEN=$(echo $AUTH | jq '.access.token.id' | tr -d '"')
+        AUTH_TOKEN=$(echo $AUTH | jq '.access.token.id' | tr -d '"')
         TOKEN_EXPIRES=$(echo $AUTH | jq . | grep expires | cut -d '"' -f4 | sed 's/T/ /g' | cut -c1-19)
         DEFAULT_REG=$(echo $AUTH | jq '.access.user' | grep defaultRegion | cut -d '"' -f4)
         ACCOUNT_NUMBER=$(echo $AUTH | jq '.access.token.tenant' | grep id | cut -d '"' -f4)
@@ -112,13 +112,13 @@ print_nice ()
     then
         echo $AUTH | jq '.access.serviceCatalog' | grep "URL"| cut -d '"' -f4
     fi    
-    printf "\n\e[1;36m--------- API Token ---------\e[0m\nTOKEN=$TOKEN\nToken expires: $TOKEN_EXPIRES\n\n"
+    printf "\n\e[1;36m--------- API Token ---------\e[0m\nAUTH_TOKEN=$AUTH_TOKEN\nToken expires: $TOKEN_EXPIRES\n\n"
     printf "\e[1;36m--- Example curl requests ---\e[0m\n"
     echo "See https://docs.rackspace.com for full specification, add endpoint URL at the end of each request"
     echo "- Generic silent request:"
-    echo 'curl -s -H "X-Auth-Token: $TOKEN" -H "Content-type: application/json" -X GET '
+    echo 'curl -s -H "X-Auth-Token: $AUTH_TOKEN" -H "Content-type: application/json" -X GET '
     echo "- Monitoring entities request:"
-    printf 'curl -s -H "X-Auth-Token: $TOKEN" -H "Content-type: application/json" -X GET https://monitoring.api.rackspacecloud.com/v1.0/'$ACCOUNT_NUMBER'/entities \n\n'
+    printf 'curl -s -H "X-Auth-Token: $AUTH_TOKEN" -H "Content-type: application/json" -X GET https://monitoring.api.rackspacecloud.com/v1.0/'$ACCOUNT_NUMBER'/entities \n\n'
 }
 
 
